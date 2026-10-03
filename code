@@ -1,0 +1,567 @@
+# HANDS-ON 1 - AFD + OBJETO INSTRUCCIÓN + MÁQUINA DE MOORE
+#
+# ISA admitido:
+# MOV R, d       R = AL o BL
+# ADD AL, BL
+# STO d
+# END
+#
+# El programa:
+# 1. Recibe una instrucción textual.
+# 2. La valida mediante un AFD.
+# 3. Reconoce sus tokens.
+# 4. Construye el objeto instrucción.
+# 5. Utiliza una Máquina de Moore para generar
+#    las microoperaciones correspondientes.
+#
+# No se ejecutan las microoperaciones.
+
+
+class ObjetoInstruccion:
+    def __init__(self, operacion, registros=None, direccion=None):
+        self.operacion = operacion
+        self.registros = registros if registros is not None else []
+        self.direccion = direccion
+
+    def mostrar(self):
+        print("{")
+        print(f'    operacion: "{self.operacion}",')
+
+        registros_texto = ", ".join(
+            f'"{registro}"' for registro in self.registros
+        )
+
+        print(f"    registros: [{registros_texto}],")
+
+        if self.direccion is None:
+            print("    direccion: null")
+        else:
+            print(f"    direccion: {self.direccion}")
+
+        print("}")
+
+
+class AFD:
+    def __init__(self, entrada):
+        self.entrada = entrada
+        self.posicion = 0
+        self.tokens = []
+
+    # Obtener el carácter actual
+    def actual(self):
+        if self.posicion < len(self.entrada):
+            return self.entrada[self.posicion]
+        return None
+
+    # Saltar espacios
+    def saltar_espacios(self):
+        while self.actual() is not None and self.actual() == " ":
+            self.posicion += 1
+
+    # Leer una palabra
+    def leer_palabra(self):
+        inicio = self.posicion
+
+        while (
+            self.actual() is not None
+            and self.actual().isalpha()
+        ):
+            self.posicion += 1
+
+        return self.entrada[inicio:self.posicion]
+
+    # Leer un número decimal
+    def leer_numero(self):
+        inicio = self.posicion
+
+        while (
+            self.actual() is not None
+            and self.actual().isdigit()
+        ):
+            self.posicion += 1
+
+        return self.entrada[inicio:self.posicion]
+
+    # Agregar token reconocido
+    def agregar_token(self, tipo, lexema):
+        self.tokens.append((tipo, lexema))
+
+    # Mostrar error
+    def error(self, mensaje):
+        print(f"Instrucción inválida: {mensaje}")
+        return None
+
+    # Validar la instrucción mediante el AFD
+    def validar(self):
+
+        self.saltar_espacios()
+
+        # Estado inicial: se espera el mnemónico
+        if self.actual() is None:
+            return self.error("la entrada está vacía.")
+
+        palabra = self.leer_palabra()
+
+        # Caso MOV
+        if palabra == "MOV":
+
+            self.agregar_token("MOV", palabra)
+
+            # Después de MOV se espera AL o BL
+            self.saltar_espacios()
+
+            if self.actual() is None:
+                return self.error(
+                    "falta el registro y la dirección."
+                )
+
+            registro = self.leer_palabra()
+
+            if registro not in ("AL", "BL"):
+                if registro == "AX":
+                    return self.error(
+                        "el registro AX no pertenece al ISA. "
+                        "Solo se permiten AL o BL."
+                    )
+
+                return self.error(
+                    f"registro no válido: {registro}."
+                )
+
+            self.agregar_token("REGISTRO", registro)
+
+            # Después del registro se espera una coma
+            self.saltar_espacios()
+
+            if self.actual() != ",":
+                return self.error(
+                    "falta la coma entre el registro y la dirección."
+                )
+
+            self.agregar_token("COMA", ",")
+            self.posicion += 1
+
+            # Después de la coma se espera un número
+            self.saltar_espacios()
+
+            if self.actual() is None:
+                return self.error(
+                    "falta la dirección de memoria."
+                )
+
+            if not self.actual().isdigit():
+                return self.error(
+                    "la dirección debe ser un número decimal no negativo."
+                )
+
+            numero = self.leer_numero()
+
+            self.agregar_token("NUMERO", numero)
+
+            # Comprobar que no haya elementos adicionales
+            self.saltar_espacios()
+
+            if self.actual() is not None:
+                return self.error(
+                    "existen operandos o caracteres adicionales."
+                )
+
+            direccion = int(numero)
+
+            objeto = ObjetoInstruccion(
+                "MOV",
+                [registro],
+                direccion
+            )
+
+            return objeto
+
+        # Caso ADD
+        elif palabra == "ADD":
+
+            self.agregar_token("ADD", palabra)
+
+            # Se espera AL como primer registro
+            self.saltar_espacios()
+
+            if self.actual() is None:
+                return self.error(
+                    "falta el primer registro."
+                )
+
+            registro1 = self.leer_palabra()
+
+            if registro1 != "AL":
+                return self.error(
+                    "ADD solo acepta AL como primer operando."
+                )
+
+            self.agregar_token("REGISTRO", registro1)
+
+            # Se espera una coma
+            self.saltar_espacios()
+
+            if self.actual() != ",":
+                return self.error(
+                    "falta la coma entre los registros."
+                )
+
+            self.agregar_token("COMA", ",")
+            self.posicion += 1
+
+            # Se espera BL como segundo registro
+            self.saltar_espacios()
+
+            if self.actual() is None:
+                return self.error(
+                    "falta el segundo registro."
+                )
+
+            registro2 = self.leer_palabra()
+
+            if registro2 != "BL":
+                return self.error(
+                    "ADD solo acepta BL como segundo operando."
+                )
+
+            self.agregar_token("REGISTRO", registro2)
+
+            # Comprobar que no haya más elementos
+            self.saltar_espacios()
+
+            if self.actual() is not None:
+                return self.error(
+                    "existen operandos o caracteres adicionales."
+                )
+
+            objeto = ObjetoInstruccion(
+                "ADD",
+                ["AL", "BL"],
+                None
+            )
+
+            return objeto
+
+        # Caso STO
+        elif palabra == "STO":
+
+            self.agregar_token("STO", palabra)
+
+            # Se espera una dirección
+            self.saltar_espacios()
+
+            if self.actual() is None:
+                return self.error(
+                    "falta la dirección de memoria."
+                )
+
+            if not self.actual().isdigit():
+                return self.error(
+                    "la dirección debe ser un número decimal no negativo."
+                )
+
+            numero = self.leer_numero()
+
+            self.agregar_token("NUMERO", numero)
+
+            # Comprobar que no haya más elementos
+            self.saltar_espacios()
+
+            if self.actual() is not None:
+                return self.error(
+                    "existen operandos o caracteres adicionales."
+                )
+
+            direccion = int(numero)
+
+            objeto = ObjetoInstruccion(
+                "STO",
+                [],
+                direccion
+            )
+
+            return objeto
+
+        # Caso END
+        elif palabra == "END":
+
+            self.agregar_token("END", palabra)
+
+            # END no acepta operandos
+            self.saltar_espacios()
+
+            if self.actual() is not None:
+                return self.error(
+                    "END no acepta operandos."
+                )
+
+            objeto = ObjetoInstruccion(
+                "END",
+                [],
+                None
+            )
+
+            return objeto
+
+        # Mnemónico desconocido
+        else:
+            return self.error(
+                f"mnemónico no reconocido: {palabra}."
+            )
+
+
+class MaquinaMoore:
+
+    def __init__(self, objeto):
+        self.objeto = objeto
+        self.estado = "INICIO"
+        self.numero_microoperacion = 1
+
+    # Cada llamada genera la salida del estado actual
+    # y avanza al siguiente estado.
+    def siguientePaso(self):
+
+        # Máquina de Moore para MOV
+        if self.objeto.operacion == "MOV":
+
+            registro = self.objeto.registros[0]
+            direccion = self.objeto.direccion
+
+            if self.estado == "INICIO":
+
+                print(
+                    f"{self.numero_microoperacion}. "
+                    f"MAR ← {direccion}"
+                )
+
+                self.numero_microoperacion += 1
+                self.estado = "LEER_MEMORIA"
+
+                return True
+
+            elif self.estado == "LEER_MEMORIA":
+
+                print(
+                    f"{self.numero_microoperacion}. "
+                    f"MBR ← M[MAR]"
+                )
+
+                self.numero_microoperacion += 1
+                self.estado = "CARGAR_REGISTRO"
+
+                return True
+
+            elif self.estado == "CARGAR_REGISTRO":
+
+                print(
+                    f"{self.numero_microoperacion}. "
+                    f"{registro} ← MBR"
+                )
+
+                self.numero_microoperacion += 1
+                self.estado = "FIN"
+
+                return True
+
+            elif self.estado == "FIN":
+                return False
+
+        # Máquina de Moore para ADD
+        elif self.objeto.operacion == "ADD":
+
+            if self.estado == "INICIO":
+
+                print(
+                    f"{self.numero_microoperacion}. "
+                    f"ACC ← AL + BL"
+                )
+
+                self.numero_microoperacion += 1
+                self.estado = "FIN"
+
+                return True
+
+            elif self.estado == "FIN":
+                return False
+
+        # Máquina de Moore para STO
+        elif self.objeto.operacion == "STO":
+
+            direccion = self.objeto.direccion
+
+            if self.estado == "INICIO":
+
+                print(
+                    f"{self.numero_microoperacion}. "
+                    f"MAR ← {direccion}"
+                )
+
+                self.numero_microoperacion += 1
+                self.estado = "LEER_ACC"
+
+                return True
+
+            elif self.estado == "LEER_ACC":
+
+                print(
+                    f"{self.numero_microoperacion}. "
+                    f"MBR ← ACC"
+                )
+
+                self.numero_microoperacion += 1
+                self.estado = "ESCRIBIR_MEMORIA"
+
+                return True
+
+            elif self.estado == "ESCRIBIR_MEMORIA":
+
+                print(
+                    f"{self.numero_microoperacion}. "
+                    f"M[MAR] ← MBR"
+                )
+
+                self.numero_microoperacion += 1
+                self.estado = "FIN"
+
+                return True
+
+            elif self.estado == "FIN":
+                return False
+
+        # Máquina de Moore para END
+        elif self.objeto.operacion == "END":
+
+            if self.estado == "INICIO":
+
+                print(
+                    f"{self.numero_microoperacion}. "
+                    f"HALT ← 1"
+                )
+
+                self.numero_microoperacion += 1
+                self.estado = "FIN"
+
+                return True
+
+            elif self.estado == "FIN":
+                return False
+
+        return False
+
+
+def mostrar_tokens(tokens):
+
+    print("\nTOKENS RECONOCIDOS")
+
+    for tipo, lexema in tokens:
+
+        if tipo == "COMA":
+            print(f'COMA("{lexema}")')
+        else:
+            print(f'{tipo}("{lexema}")')
+
+
+def mostrar_componentes(objeto):
+
+    print("\nCOMPONENTES IDENTIFICADOS")
+
+    print(f"Mnemónico: {objeto.operacion}")
+
+    if objeto.operacion == "MOV":
+
+        print(
+            f"Registro destino: {objeto.registros[0]}"
+        )
+
+        print(
+            f"Dirección de memoria: {objeto.direccion}"
+        )
+
+        print("Direccionamiento: directo")
+
+    elif objeto.operacion == "ADD":
+
+        print("Registro fuente 1: AL")
+        print("Registro fuente 2: BL")
+
+    elif objeto.operacion == "STO":
+
+        print(
+            f"Dirección de memoria: {objeto.direccion}"
+        )
+
+        print("Direccionamiento: directo")
+
+    elif objeto.operacion == "END":
+
+        print("Sin operandos")
+
+
+def main():
+
+    print("ANALIZADOR ISA - AFD + MÁQUINA DE MOORE")
+
+    print("\nInstrucciones admitidas:")
+    print("  MOV AL, d")
+    print("  MOV BL, d")
+    print("  ADD AL, BL")
+    print("  STO d")
+    print("  END")
+
+    print("\nEscriba una instrucción.")
+    print("Escriba SALIR para terminar.")
+
+    while True:
+
+        print("\n----------------------------------------")
+
+        entrada = input("ENTRADA: ")
+
+        # Salir del programa
+        if entrada.strip().upper() == "SALIR":
+            print("\nPrograma terminado.")
+            break
+
+        print("\nVALIDACIÓN MEDIANTE AFD")
+
+        # Crear el AFD
+        afd = AFD(entrada)
+
+        # Validar la entrada
+        objeto = afd.validar()
+
+        # Si es inválida, detener el procesamiento
+        if objeto is None:
+
+            print("No se construye el objeto instrucción.")
+            print("No se generan microoperaciones.")
+
+            continue
+
+        # La instrucción fue aceptada
+        print("Instrucción válida.")
+
+        # Mostrar tokens
+        mostrar_tokens(afd.tokens)
+
+        # Mostrar componentes
+        mostrar_componentes(objeto)
+
+        # Mostrar objeto instrucción
+        print("\nOBJETO INSTRUCCIÓN")
+        objeto.mostrar()
+
+        # Crear la Máquina de Moore
+        print("\nMICROOPERACIONES GENERADAS POR MOORE")
+
+        moore = MaquinaMoore(objeto)
+
+        # Recorrer los estados de Moore
+        while moore.siguientePaso():
+            pass
+
+        print("\nGeneración terminada.")
+
+
+if __name__ == "__main__":
+    main()
